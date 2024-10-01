@@ -1,0 +1,106 @@
+#include <Wire.h>
+#include <PulsePosition.h>
+
+const int LED_LOW_BATTERY = 5;
+const int LED_ARMED = 13;
+
+const float GYRO_SENSITIVITY = 65.5;  // Adjust based on your gyro sensor
+
+float desiredRates[4] = {0, 0, 0, 0};  // Desired roll, pitch, yaw, throttle
+float currentRates[3] = {0, 0, 0};   // Measured roll, pitch, yaw
+float pidOutputs[3] = {0, 0, 0};     // PID outputs for roll, pitch, yaw
+
+PulsePositionInput receiverInput(RISING);
+float receiverValues[8] = {0};        // Stores receiver channel readings
+
+uint32_t loopStartTime = 0;           // Stores loop start time
+
+void setupGyro() {
+  Wire.beginTransmission(0x68);
+  Wire.write(0x6B);
+  Wire.write(0x00);
+  Wire.endTransmission();
+}
+
+void calibrateGyro() {
+  for (int i = 0; i < 2000; i++) {
+    readGyro();
+    currentRates[0] += gyroRates[0];
+    currentRates[1] += gyroRates[1];
+    currentRates[2] += gyroRates[2];
+    delay(1);
+  }
+
+  currentRates[0] /= 2000.0f;
+  currentRates[1] /= 2000.0f;
+  currentRates[2] /= 2000.0f;
+}
+
+void setupReceiver() {
+  receiverInput.begin(14);
+}
+
+void setupMotors() {
+  analogWriteFrequency(1, 250);
+  analogWriteFrequency(2, 250);
+  analogWriteFrequency(3, 250);
+  analogWriteFrequency(4, 250);
+  analogWriteResolution(12);
+  pinMode(6, OUTPUT);
+  digitalWrite(6, HIGH);
+}
+
+void setupBattery() {
+  battery_voltage();  // Call your battery voltage measurement function
+  if (Voltage > 8.3) {
+    digitalWrite(LED_LOW_BATTERY, LOW);
+    BatteryAtStart = BatteryDefault;
+  } else if (Voltage < 7.5) {
+    BatteryAtStart = 30.0f / 100.0f * BatteryDefault;
+  } else {
+    digitalWrite(LED_LOW_ BATTERY, LOW);
+    BatteryAtStart = (82.0f * Voltage - 580.0f) / 100.0f * BatteryDefault;
+  }
+}
+
+void setup() {
+  pinMode(LED_LOW_BATTERY, OUTPUT);
+  pinMode(LED_ARMED, OUTPUT);
+  Wire.setClock(400000);
+  Wire.begin();
+  delay(250);
+
+  setupGyro();
+  calibrateGyro();
+  setupReceiver();
+  setupMotors();
+  setupBattery();
+
+  // Wait for user to arm the drone (e.g., by checking a specific receiver channel)
+  while (/* condition for armed state */) {
+    readReceiver();
+    delay(4);
+  }
+  digitalWrite(LED_ARMED, LOW); // Indicate armed state
+
+  loopStartTime = micros();
+}
+
+void readGyro() {
+  Wire.beginTransmission(0x68);
+  Wire.write(0x1A);
+  Wire.write(0x05);
+  Wire.endTransmission();
+  Wire.beginTransmission(0x68);
+  Wire.write(0x1B);
+  Wire.write(0x08);
+  Wire.endTransmission();
+  Wire.beginTransmission(0x68);
+  Wire.write(0x43);
+  Wire.endTransmission();
+  Wire.requestFrom(0x68, 6);
+  int16_t gyroX = Wire.read() << 8 | Wire.read();
+  int16_t gyroY = Wire.read() << 8 | Wire.read();
+  int16_t gyroZ = Wire.read() << 8 | Wire.read();
+  gyroRates[0] = (float)gyroX / GYRO_SENSITIVITY;
+  gyroRates
